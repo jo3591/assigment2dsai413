@@ -1,0 +1,13 @@
+# BiomedCLIP retrieval baseline
+checkpoint: "hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224"
+torch_dtype: "float32"
+embedding_dim: 512
+image_size: 224
+
+index:
+  out_path: "data/indices/biomedclip.faiss"
+  metric: "ip"                      # inner product on L2-normalized vectors
+  batch_size: 32
+
+search:
+  top_k: 5

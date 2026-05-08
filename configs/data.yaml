@@ -1,0 +1,28 @@
+# Data preparation config
+kaggle:
+  dataset: "simhadrisadaram/mimic-cxr-dataset"
+  download_root: "data/raw"
+
+preprocess:
+  text_column: "text"               # report column in Kaggle CSV
+  min_report_tokens: 30
+  deidentify_token: "___"           # MIMIC redaction marker stripped from text
+  sections:
+    findings_regex: "(?is)\\bfindings\\b\\s*:?\\s*(.*?)(?=\\bimpression\\b|$)"
+    impression_regex: "(?is)\\bimpression\\b\\s*:?\\s*(.*?)$"
+
+sample:
+  n_total: 4000
+  random_seed: 42
+  stratify_by: "primary_chexpert_label"
+
+splits:
+  train_frac: 0.80
+  val_frac: 0.10
+  test_frac: 0.10
+  by: "subject_id"                  # patient-level split
+
+paths:
+  processed: "data/processed/reports.parquet"
+  splits: "data/processed/splits.json"
+  samples_dir: "data/samples"

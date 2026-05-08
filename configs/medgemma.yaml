@@ -1,0 +1,33 @@
+# MedGemma generator config
+checkpoint: "google/medgemma-4b-it"
+torch_dtype: "bfloat16"
+device_map: "auto"
+quantization: null                  # null | "int8" | "int4"
+
+generation:
+  max_new_tokens: 512
+  do_sample: false
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.0
+
+report_mode:
+  system_prompt: |
+    You are an experienced radiologist drafting a chest X-ray report.
+    Produce two sections only: FINDINGS and IMPRESSION.
+    Be concise, clinically accurate, and use neutral observational language.
+    Do not use comparative terms (unchanged, new, interval, prior, follow-up, since).
+    If retrieval context is provided, you may use it to inform terminology, but only describe what is visible in this radiograph.
+  user_template: |
+    Generate a chest X-ray report for the attached image.
+    {context_block}
+
+qa_mode:
+  system_prompt: |
+    You are an experienced radiologist answering a clinical question about a chest X-ray.
+    Ground every answer strictly in what is visible in the radiograph and any provided retrieved evidence.
+    Do not use comparative terms (unchanged, new, interval, prior, follow-up, since).
+    If you cannot answer from the image and evidence, say so explicitly.
+  user_template: |
+    Question: {question}
+    {context_block}

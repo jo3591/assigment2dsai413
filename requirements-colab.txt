@@ -1,0 +1,23 @@
+# Colab T4 / A100 — torch is pre-installed by the runtime; install only deltas.
+# Run: !pip install -q -r requirements-colab.txt
+
+transformers==4.50.0
+accelerate==1.1.1
+peft==0.13.2
+bitsandbytes==0.44.1
+colpali-engine==0.3.7
+byaldi==0.0.7
+open_clip_torch==2.29.0
+faiss-cpu==1.8.0
+pydicom==2.4.4
+pydantic==2.9.2
+python-dotenv==1.0.1
+kaggle==1.6.17
+rapidfuzz==3.10.1
+tenacity==9.0.0
+openai==1.55.0
+bert-score==0.3.13
+sacrebleu==2.4.3
+rouge-score==0.1.2
+sentencepiece==0.2.0
+streamlit==1.40.0

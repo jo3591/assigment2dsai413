@@ -1,0 +1,31 @@
+# Evaluation config — metrics, judge model, output paths
+report_mode:
+  metrics:
+    bleu: true
+    rouge_l: true
+    bertscore: true
+    bertscore_model: "microsoft/deberta-xlarge-mnli"
+    chexbert_f1: true               # rule-based fallback if labeler missing
+    radgraph_f1: false              # opt-in; package install is fragile
+  out_dir: "results"
+  test_size: 200
+
+qa_mode:
+  metrics:
+    exact_match: true
+    token_f1: true
+    bertscore: true
+    llm_judge: true
+  out_dir: "results"
+  test_size: 200
+
+retrieval:
+  metrics: ["recall@1", "recall@5", "recall@10", "ndcg@10", "mrr"]
+  query_strategy: "report_sentence"   # use sentence from FINDINGS as query
+  out_dir: "results"
+
+llm_judge:
+  model: "anthropic/claude-3.5-sonnet"
+  fallback_model: "meta-llama/llama-3.3-70b-instruct"
+  rubric_dims: ["correctness", "groundedness"]
+  pass_threshold: 4

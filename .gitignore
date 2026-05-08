@@ -1,0 +1,84 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual envs
+venv/
+env/
+.venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# Project artifacts
+.env
+data/raw/
+data/processed/
+data/qa/cache/
+data/indices/
+results/predictions/
+*.faiss
+*.pt
+*.pth
+*.bin
+*.safetensors
+
+# Keep these even though they're in ignored dirs
+!data/samples/.gitkeep
+!data/indices/.gitkeep
+!data/processed/.gitkeep
+!data/qa/.gitkeep
+!data/raw/.gitkeep
+!results/predictions/.gitkeep
+
+# Models — only LoRA adapter is committed
+models/*
+!models/colpali-cxr-lora/
+!models/.gitkeep
+
+# Reference PDFs (kept locally for grading reference, not in repo)
+*.pdf
+!report/*.pdf
+
+# Logs
+*.log
+runs/
+wandb/
+lightning_logs/
+
+# Kaggle / HF caches
+.cache/
+.kaggle/
+~/.cache/huggingface/
+
+# OS
+Thumbs.db
+
+# Claude Code local settings
+.claude/

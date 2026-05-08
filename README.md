@@ -1,0 +1,196 @@
+# Multi-Modal Chest X-Ray Intelligence System
+
+> DSAI 413 Assignment 2 — dual-mode medical AI: **Report Generation** + **RAG-based QA** for chest X-rays. Compares ColPali (zero-shot + LoRA-tuned), BiomedCLIP, and pure MedGemma-4B-IT across both modes.
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Streamlit](https://img.shields.io/badge/UI-Streamlit-ff4b4b)](https://streamlit.io)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+---
+
+## Overview
+
+Two independent modes share one retrieval+generation backbone:
+
+```
+                CXR Image (+ optional Question)
+                         │
+          ┌──────────────┴──────────────┐
+          │                             │
+     Mode A: Report                Mode B: QA
+          │                             │
+   [Retriever]                    [Retriever]
+   ColPali-LoRA / ColPali-zs / BiomedCLIP
+          │                             │
+   Top-K reports                  Top-K reports
+          │                             │
+   [Generator]                    [Generator]
+   MedGemma-4B-IT                 MedGemma-4B-IT
+          │                             │
+   FINDINGS + IMPRESSION           Grounded Answer
+                                    + retrieved evidence
+```
+
+**Five configurations** are evaluated head-to-head:
+1. `medgemma_only` — pure VLM, no retrieval (baseline).
+2. `biomedclip_rag` — BiomedCLIP retrieves → MedGemma generates.
+3. `colpali_zs_rag` — Zero-shot ColPali retrieves → MedGemma generates.
+4. `colpali_lora_rag` — LoRA-tuned ColPali retrieves → MedGemma generates (recommended).
+5. `colpali_lora_text_llm` — LoRA-tuned ColPali → text-only OpenRouter LLM (ablation).
+
+## Headline Results
+
+> Filled in after you run `notebooks/04` and `notebooks/05`. See `results/tables/*.csv`.
+
+| Config | Mode A — BERTScore | Mode A — CheXbert F1 | Mode B — Token-F1 | Mode B — LLM-judge |
+|---|---|---|---|---|
+| `medgemma_only` | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
+| `biomedclip_rag` | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
+| `colpali_zs_rag` | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
+| `colpali_lora_rag` | **_tbd_** | **_tbd_** | **_tbd_** | **_tbd_** |
+| `colpali_lora_text_llm` | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
+
+| Retriever | Recall@1 | Recall@5 | Recall@10 | MRR | nDCG@10 |
+|---|---|---|---|---|---|
+| BiomedCLIP | _tbd_ | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
+| ColPali (zero-shot) | _tbd_ | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
+| ColPali (LoRA) | _tbd_ | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
+
+## Repo Layout
+
+```
+413assigment2/
+├── README.md                        # this file
+├── pyproject.toml + requirements*   # deps (local + Colab)
+├── .env.example                     # API keys template
+├── configs/                         # YAML configs (data, models, eval)
+├── src/cxr_intel/                   # main package
+│   ├── data/                        # loaders, preprocess, CheXpert labeler, splits
+│   ├── retrieval/                   # ColPali + BiomedCLIP retrievers
+│   ├── models/                      # MedGemma runner + LLM router
+│   ├── generation/                  # Report + QA pipelines + prompt templates
+│   ├── qa_dataset/                  # synthetic QA generation + validation
+│   ├── finetune/                    # ColPali LoRA training
+│   ├── eval/                        # metrics + LLM-as-judge
+│   ├── app/                         # Streamlit demo
+│   └── utils/                       # io, logging, viz helpers
+├── notebooks/01..06                 # end-to-end Colab pipeline
+├── scripts/                         # CLI entry points
+├── tests/                           # pytest smoke tests
+├── data/                            # gitignored except samples/
+├── models/colpali-cxr-lora/         # the trained LoRA adapter
+├── results/                         # CSV tables + PNG figures
+└── report/                          # written report + demo video link
+```
+
+## Installation
+
+### Local (CPU dev / running tests)
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e .[dev]
+pytest tests/
+```
+
+### Colab (GPU pipeline)
+
+```python
+# In a fresh Colab notebook
+from google.colab import drive; drive.mount('/content/drive')
+!git clone https://github.com/<you>/cxr-intel /content/cxr-intel
+%cd /content/cxr-intel
+!bash scripts/colab_bootstrap.sh
+```
+
+## Setup — Secrets
+
+Copy `.env.example` to `.env` and fill in:
+
+| Variable | Where to get it |
+|---|---|
+| `HF_TOKEN` | https://huggingface.co/settings/tokens — also accept the [MedGemma TOS](https://huggingface.co/google/medgemma-4b-it) |
+| `OPENROUTER_API_KEY` | https://openrouter.ai/keys |
+| `NVIDIA_API_KEY` | (optional) https://build.nvidia.com/ |
+| `KAGGLE_USERNAME`, `KAGGLE_KEY` | https://www.kaggle.com/settings → Create API Token |
+
+## Reproducing Results — One Command at a Time
+
+```powershell
+# 1. Pull the Kaggle MIMIC-CXR subset, preprocess, compute CheXpert labels, split
+python scripts/download_data.py --config configs/data.yaml
+
+# 2. Generate the synthetic QA dataset (LLM call ≈ 1-2h on full corpus)
+python scripts/build_qa_dataset.py --config configs/data.yaml
+
+# 3. Build retrieval indices for all three backends
+python scripts/build_indices.py --backend biomedclip --backend colpali_zs
+
+# 4. (Colab A100) Fine-tune ColPali LoRA, save adapter to models/colpali-cxr-lora/
+python scripts/train_colpali_lora.py --epochs 3
+
+# 5. Build the LoRA index
+python scripts/build_indices.py --backend colpali_lora
+
+# 6. Run the full evaluation matrix
+python scripts/run_eval.py --mode report --mode qa --mode retrieval --configs all
+
+# 7. Generate figures
+jupyter nbconvert --to notebook --execute notebooks/06_results_figures.ipynb
+```
+
+## Running the Streamlit Demo
+
+```powershell
+streamlit run src/cxr_intel/app/streamlit_app.py
+```
+
+- **Page 1 — Report Generation**: upload an X-ray, choose retriever + generator, get a structured report.
+- **Page 2 — QA Mode**: same inputs + a question. Optional ColPali MaxSim heatmap overlay shows what drove retrieval.
+- **Page 3 — Compare Models**: runs three configs side-by-side on the same input.
+
+## QA Dataset Card
+
+- **Source**: synthesized from MIMIC-CXR reports in the Kaggle subset (`text` column).
+- **Anchors**: 14 CheXpert labels parsed by `src/cxr_intel/data/chexpert_labels.py` (rule-based fallback).
+- **Question types**: `existence`, `location`, `severity`, `attribute`, `open` (templates in `src/cxr_intel/qa_dataset/templates.py`).
+- **Generator**: `meta-llama/llama-3.3-70b-instruct` via OpenRouter, prompted with the report + CheXpert vector + target type. Banned-terms list (`unchanged, new, interval, prior, follow-up, since, …`) baked into the system prompt.
+- **Validation**: 4-step pipeline in `src/cxr_intel/qa_dataset/validator.py`:
+  1. Banned-term regex reject.
+  2. Source-sentence fuzzy match (≥85%) against the report.
+  3. LLM judge scores 4 dims 0-5; keep mean ≥3.5 and all dims ≥3.
+  4. Dedupe by `(study_id, question_type, anchor_label)`.
+- **Output**: `data/qa/qa_v1.jsonl` (train) and `data/qa/qa_test.jsonl` (test, patient-disjoint). Schema in `src/cxr_intel/qa_dataset/schema.py`.
+
+## Evaluation Methodology
+
+| Mode | Metrics | Test set |
+|---|---|---|
+| Report Generation | BLEU-1/2/4, ROUGE-L, BERTScore-F1, CheXbert-F1 (rule-based proxy), RadGraph-F1 (optional) | 200 patient-disjoint studies |
+| QA | Exact-Match, token-F1, BERTScore, LLM-as-judge mean + pass-rate (≥4) | 200 patient-disjoint QA pairs |
+| Retrieval | Recall@1/5/10, MRR, nDCG@10 | 200 sentence queries; gold = source study_id |
+
+## Demo Video
+
+[`report/demo_video_link.md`](report/demo_video_link.md) — 10 min unlisted YouTube walkthrough.
+
+## Limitations & Ethics
+
+- **Not for clinical decision-making.** Generated reports/answers are research artifacts and must not inform patient care.
+- **Rule-based CheXpert labeler** (regex + negation heuristics) is a proxy; the official CheXpert labeler may give slightly different stats.
+- **Synthetic QA** is grounded in radiology reports, not in the images themselves — it inherits report errors.
+- **MIMIC-CXR data** is PhysioNet credentialed-use; the Kaggle subset is a derivative; downstream users must comply with the MIMIC license.
+
+## Citations
+
+- Faysse et al. **ColPali: Efficient Document Retrieval with Vision Language Models.** arXiv:2407.01449.
+- Sellergren et al. **MedGemma.** Google DeepMind, 2024–2025.
+- Zhang et al. **BiomedCLIP: a multimodal biomedical foundation model.** arXiv:2303.00915.
+- Ranjit et al. **Retrieval Augmented Chest X-Ray Report Generation using OpenAI GPT models.** arXiv:2305.03660.
+- Pellegrini et al. (MIMIC-CXR-VQA dataset construction): https://github.com/LightVED-prhlt/MIMIC-CXR-VQA-Dataset_Creation.
+- Hugging Face **Multimodal RAG cookbook.** https://huggingface.co/learn/cookbook/multimodal_rag_using_document_retrieval_and_vlms.
+
+## License
+
+MIT for code (see [`LICENSE`](LICENSE)). Data redistribution governed by the underlying MIMIC-CXR / PhysioNet license.
