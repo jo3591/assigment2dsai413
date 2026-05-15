@@ -94,15 +94,28 @@ pip install -e .[dev]
 pytest tests/
 ```
 
-### Colab (GPU pipeline)
+### Free-tier GPU pipeline (Colab T4 + Kaggle P100)
+
+This repo targets the **free** versions of both services. Memory budget on Colab T4
+(15 GB) is tight, so MedGemma is loaded with INT4 quantization by default.
+
+**Colab T4** — used for data prep, QA synthesis, indexing, evaluation, and the
+Streamlit demo:
 
 ```python
-# In a fresh Colab notebook
 from google.colab import drive; drive.mount('/content/drive')
-!git clone https://github.com/<you>/cxr-intel /content/cxr-intel
+!git clone https://github.com/jo3591/assigment2dsai413 /content/cxr-intel
 %cd /content/cxr-intel
 !bash scripts/colab_bootstrap.sh
 ```
+
+**Kaggle P100** — used only for the ColPali LoRA fine-tune (16 GB VRAM, 30 h/week
+free). See [docs/kaggle_setup.md](docs/kaggle_setup.md) for the full walkthrough and
+run [`notebooks/03_colpali_lora_train_kaggle.ipynb`](notebooks/03_colpali_lora_train_kaggle.ipynb).
+
+> If you have access to an A100 or H100, set `torch_dtype: bfloat16` in
+> `configs/colpali.yaml` and `configs/medgemma.yaml`, and `quantization: null` in
+> the latter for slightly better quality.
 
 ## Setup — Secrets
 
@@ -115,25 +128,40 @@ Copy `.env.example` to `.env` and fill in:
 | `NVIDIA_API_KEY` | (optional) https://build.nvidia.com/ |
 | `KAGGLE_USERNAME`, `KAGGLE_KEY` | https://www.kaggle.com/settings → Create API Token |
 
-## Reproducing Results — One Command at a Time
+## Reproducing Results — Step by Step
 
-```powershell
+The pipeline straddles two services to stay on free tiers.
+
+### On Colab T4
+
+```bash
 # 1. Pull the Kaggle MIMIC-CXR subset, preprocess, compute CheXpert labels, split
 python scripts/download_data.py --config configs/data.yaml
 
 # 2. Generate the synthetic QA dataset (LLM call ≈ 1-2h on full corpus)
 python scripts/build_qa_dataset.py --config configs/data.yaml
 
-# 3. Build retrieval indices for all three backends
+# 3. Build retrieval indices for the two non-LoRA backends
 python scripts/build_indices.py --backend biomedclip --backend colpali_zs
+```
 
-# 4. (Colab A100) Fine-tune ColPali LoRA, save adapter to models/colpali-cxr-lora/
-python scripts/train_colpali_lora.py --epochs 3
+### On Kaggle P100  (see [docs/kaggle_setup.md](docs/kaggle_setup.md))
 
-# 5. Build the LoRA index
+```bash
+# 4. Fine-tune ColPali LoRA → models/colpali-cxr-lora/final/
+#    Use notebooks/03_colpali_lora_train_kaggle.ipynb (P100, ~3-4 h, 2 epochs)
+python scripts/train_colpali_lora.py --epochs 2 --batch-size 2
+```
+
+Download the LoRA adapter, commit it back to the repo, then return to Colab.
+
+### Back on Colab T4
+
+```bash
+# 5. Build the LoRA-aware index
 python scripts/build_indices.py --backend colpali_lora
 
-# 6. Run the full evaluation matrix
+# 6. Run the full evaluation matrix (Report + QA + Retrieval, all 5 configs)
 python scripts/run_eval.py --mode report --mode qa --mode retrieval --configs all
 
 # 7. Generate figures

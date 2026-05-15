@@ -1,11 +1,11 @@
 # ColPali retrieval + LoRA fine-tune config
 checkpoint: "vidore/colpali-v1.3"
-torch_dtype: "bfloat16"
+torch_dtype: "float16"              # Kaggle P100 / Colab T4 use fp16; A100/H100 can switch to bfloat16
 device_map: "auto"
 
 index:
   out_dir: "data/indices/colpali"
-  batch_size: 2                     # safer on T4; raise on A100
+  batch_size: 2                     # safe on T4/P100; raise on A100
   image_max_side: 448
 
 search:
@@ -22,18 +22,18 @@ lora:
   output_dir: "models/colpali-cxr-lora"
 
 train:
-  epochs: 3
-  per_device_batch_size: 4
-  grad_accumulation: 4
+  epochs: 2                         # 2 keeps Kaggle P100 session under 6h; bump to 3 on A100
+  per_device_batch_size: 2          # P100 16GB safe; raise to 4 on A100
+  grad_accumulation: 8              # effective batch = 16
   learning_rate: 5.0e-5
   warmup_ratio: 0.1
   weight_decay: 0.01
   scheduler: "cosine"
-  hard_negatives_per_positive: 3
+  hard_negatives_per_positive: 2    # 2 instead of 3 keeps Kaggle memory in budget
   eval_steps: 250
   save_steps: 250
   logging_steps: 25
-  bf16: true
+  bf16: false                       # auto-flipped to true on Ampere+ in train_colpali_lora.py
   gradient_checkpointing: true
   metric_for_best: "recall_at_5"
   greater_is_better: true

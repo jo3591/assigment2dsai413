@@ -1,8 +1,8 @@
 # MedGemma generator config
 checkpoint: "google/medgemma-4b-it"
-torch_dtype: "bfloat16"
+torch_dtype: "float16"              # T4/P100 lack bf16; A100/H100 can override to bfloat16
 device_map: "auto"
-quantization: null                  # null | "int8" | "int4"
+quantization: "int4"                # T4 needs INT4 to fit MedGemma alongside ColPali; null on A100
 
 generation:
   max_new_tokens: 512

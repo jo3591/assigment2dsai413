@@ -78,6 +78,22 @@ def cross_maxsim(query_emb: torch.Tensor, doc_emb: torch.Tensor) -> torch.Tensor
     return sim.max(dim=-1).values.sum(dim=-1)
 
 
+def _select_dtype(prefer_bf16: bool) -> torch.dtype:
+    """Pick the best dtype the current GPU actually supports.
+
+    - Ampere+ (A100, A6000, RTX 30/40-series, L4): bf16 if requested.
+    - Pascal/Turing/Volta (P100, T4, V100): fall back to fp16; bf16 silently
+      converts to fp32 on these GPUs which kills training speed and OOMs.
+    """
+    if not torch.cuda.is_available():
+        return torch.float32
+    if prefer_bf16 and torch.cuda.is_bf16_supported():
+        log.info("bf16 supported on this GPU — using bfloat16")
+        return torch.bfloat16
+    log.info("Using float16 (bf16 unavailable or disabled)")
+    return torch.float16
+
+
 def train(
     examples: list[ContrastiveExample],
     val_examples: list[ContrastiveExample] | None = None,
@@ -89,7 +105,7 @@ def train(
 
     ensure_dir(cfg.output_dir)
     log.info("Loading base ColPali %s", cfg.base_checkpoint)
-    dtype = torch.bfloat16 if cfg.bf16 else torch.float32
+    dtype = _select_dtype(cfg.bf16)
     model = ColPali.from_pretrained(cfg.base_checkpoint, torch_dtype=dtype, device_map="auto")
     if cfg.gradient_checkpointing:
         model.gradient_checkpointing_enable()
