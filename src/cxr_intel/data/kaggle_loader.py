@@ -5,6 +5,7 @@ Schema is asserted on load — fail fast if upstream changes.
 """
 from __future__ import annotations
 
+import ast
 import os
 from pathlib import Path
 
@@ -16,6 +17,22 @@ from cxr_intel.utils.logging import get_logger
 log = get_logger(__name__)
 
 EXPECTED_TEXT_COL = "text"
+
+
+def _parse_image_cell(value: str) -> list[str]:
+    """The `image` column in mimic_cxr_aug_train.csv is a stringified Python list.
+    Returns the list, or [value] if value is already a plain path."""
+    if not isinstance(value, str):
+        return []
+    value = value.strip()
+    if value.startswith("[") and value.endswith("]"):
+        try:
+            parsed = ast.literal_eval(value)
+            if isinstance(parsed, (list, tuple)):
+                return [str(p) for p in parsed if isinstance(p, str)]
+        except (ValueError, SyntaxError):
+            pass
+    return [value]
 
 
 def download_kaggle_dataset(slug: str, dest_dir: str | Path) -> Path:
@@ -71,15 +88,19 @@ def find_image_for_row(row: pd.Series, image_root: Path) -> Path | None:
         image_root / "images",
         image_root / "mimic-cxr-jpg",
         image_root / "mimic-cxr-jpg" / "files",
+        image_root / "official_data_iccv_final",
+        image_root / "official_data_iccv_final" / "files",
+        image_root / "official_data_iccv_final" / "images",
     ]
     for k in candidate_keys:
-        if k in row and isinstance(row[k], str) and row[k].strip():
-            rel = row[k].strip()
+        if k not in row or not isinstance(row[k], str) or not row[k].strip():
+            continue
+        # Cell may be a stringified list of multiple views — try each, pick the first hit.
+        for rel in _parse_image_cell(row[k]):
             for root in candidate_roots:
                 p = root / rel
                 if p.exists():
                     return p
-            # Try just the basename in case row[k] is an absolute or weird path
             base = Path(rel).name
             for root in candidate_roots:
                 hits = list(root.rglob(base)) if root.exists() else []
