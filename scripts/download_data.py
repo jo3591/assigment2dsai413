@@ -30,6 +30,16 @@ from cxr_intel.utils.logging import get_logger
 log = get_logger("download_data")
 
 
+def _derive_study_id_from_path(path: str | None) -> str:
+    """MIMIC-CXR paths look like .../s56476430/uuid.jpg — extract the 's...' segment."""
+    if not path:
+        return ""
+    for p in Path(str(path)).parts:
+        if p.startswith("s") and len(p) > 1 and p[1:].isdigit():
+            return p
+    return ""
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument("--config", default="configs/data.yaml")
@@ -85,6 +95,19 @@ def main() -> None:
     log.info("Images located: %d / %d", n_with_image, len(df))
     df = df[df["image_path"].notna()].copy()
     df["image_path"] = df["image_path"].astype(str)
+
+    # Derive study_id from the image path if the CSV didn't carry one
+    if "study_id" not in df.columns or df["study_id"].isna().all():
+        df["study_id"] = df["image_path"].apply(_derive_study_id_from_path)
+        # Drop rows where extraction failed
+        before = len(df)
+        df = df[df["study_id"].astype(bool)].copy()
+        if before != len(df):
+            log.warning("Dropped %d rows with unparseable study_id", before - len(df))
+        # Dedup at study level (multiple rows can map to the same study)
+        before = len(df)
+        df = df.drop_duplicates(subset=["study_id"]).copy()
+        log.info("study_id dedup (post-resolve): %d -> %d", before, len(df))
 
     if "subject_id" not in df.columns:
         # Synthesize from study_id when subject_id missing
