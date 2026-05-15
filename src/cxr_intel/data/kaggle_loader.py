@@ -63,15 +63,32 @@ def load_reports_csv(path: str | Path) -> pd.DataFrame:
 def find_image_for_row(row: pd.Series, image_root: Path) -> Path | None:
     """Best-effort image lookup. The Kaggle subset variants ship images under
     different folder layouts; this tries a few common conventions."""
-    candidate_keys = ["image_path", "path", "img_path", "filename"]
+    candidate_keys = ["image_path", "image", "path", "img_path", "filename", "file"]
+    # Common image-root prefixes inside the extracted dataset directory
+    candidate_roots = [
+        image_root,
+        image_root / "files",
+        image_root / "images",
+        image_root / "mimic-cxr-jpg",
+        image_root / "mimic-cxr-jpg" / "files",
+    ]
     for k in candidate_keys:
-        if k in row and isinstance(row[k], str):
-            p = image_root / row[k]
-            if p.exists():
-                return p
+        if k in row and isinstance(row[k], str) and row[k].strip():
+            rel = row[k].strip()
+            for root in candidate_roots:
+                p = root / rel
+                if p.exists():
+                    return p
+            # Try just the basename in case row[k] is an absolute or weird path
+            base = Path(rel).name
+            for root in candidate_roots:
+                hits = list(root.rglob(base)) if root.exists() else []
+                if hits:
+                    return hits[0]
     if "study_id" in row:
         for ext in (".jpg", ".png", ".jpeg"):
-            p = image_root / f"{row['study_id']}{ext}"
-            if p.exists():
-                return p
+            for root in candidate_roots:
+                p = root / f"{row['study_id']}{ext}"
+                if p.exists():
+                    return p
     return None
