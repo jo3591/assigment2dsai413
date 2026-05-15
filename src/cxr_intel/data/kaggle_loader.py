@@ -77,11 +77,15 @@ def load_reports_csv(path: str | Path) -> pd.DataFrame:
     return df
 
 
-def find_image_for_row(row: pd.Series, image_root: Path) -> Path | None:
-    """Best-effort image lookup. The Kaggle subset variants ship images under
-    different folder layouts; this tries a few common conventions."""
+def find_image_for_row(
+    row: pd.Series,
+    image_root: Path,
+    basename_index: dict[str, Path] | None = None,
+) -> Path | None:
+    """Best-effort image lookup. Direct path-join first (O(1) stat), then
+    optional O(1) basename lookup via a pre-built index. No recursive rglob —
+    that's catastrophic on directories with 100K+ files."""
     candidate_keys = ["image_path", "image", "path", "img_path", "filename", "file"]
-    # Common image-root prefixes inside the extracted dataset directory
     candidate_roots = [
         image_root,
         image_root / "files",
@@ -95,17 +99,17 @@ def find_image_for_row(row: pd.Series, image_root: Path) -> Path | None:
     for k in candidate_keys:
         if k not in row or not isinstance(row[k], str) or not row[k].strip():
             continue
-        # Cell may be a stringified list of multiple views — try each, pick the first hit.
         for rel in _parse_image_cell(row[k]):
+            # 1. Direct path join (fast)
             for root in candidate_roots:
                 p = root / rel
                 if p.exists():
                     return p
-            base = Path(rel).name
-            for root in candidate_roots:
-                hits = list(root.rglob(base)) if root.exists() else []
-                if hits:
-                    return hits[0]
+            # 2. Basename lookup in pre-built index (O(1))
+            if basename_index is not None:
+                hit = basename_index.get(Path(rel).name)
+                if hit is not None:
+                    return hit
     if "study_id" in row:
         for ext in (".jpg", ".png", ".jpeg"):
             for root in candidate_roots:
@@ -113,3 +117,26 @@ def find_image_for_row(row: pd.Series, image_root: Path) -> Path | None:
                 if p.exists():
                     return p
     return None
+
+
+def build_basename_index(image_root: Path, suffixes: tuple[str, ...] = (".jpg", ".png", ".jpeg")
+                         ) -> dict[str, Path]:
+    """One-pass scan that builds {basename: full_path}. Use to accelerate row-level
+    image resolution when the path layout in the CSV differs from on-disk layout."""
+    log.info("Building basename index under %s ...", image_root)
+    index: dict[str, Path] = {}
+    # Scan known sub-roots first (cheaper than a top-level rglob)
+    for sub in ["official_data_iccv_final", "files", "images", "mimic-cxr-jpg", "."]:
+        root = image_root / sub if sub != "." else image_root
+        if not root.exists():
+            continue
+        for ext in suffixes:
+            for p in root.rglob(f"*{ext}"):
+                # Don't overwrite — keep first hit per basename
+                if p.name not in index:
+                    index[p.name] = p
+        # Stop once we've found a healthy chunk so we don't double-scan
+        if len(index) > 1000:
+            break
+    log.info("Basename index: %d entries", len(index))
+    return index

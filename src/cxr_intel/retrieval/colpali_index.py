@@ -142,7 +142,12 @@ class ColPaliRetriever:
 
 @dataclass
 class ByaldiRetriever:
-    """Byaldi wrapper. Simpler, persists native indices."""
+    """Optional Byaldi wrapper — simpler API, persists native indices.
+
+    Not used by the default pipeline (we use ColPaliRetriever directly), but kept
+    here for users who install Byaldi separately and want a turn-key alternative.
+    Install with: pip install byaldi
+    """
 
     name: str = "colpali_byaldi"
     checkpoint: str = "vidore/colpali-v1.3"
@@ -153,7 +158,13 @@ class ByaldiRetriever:
     def _ensure_model(self) -> None:
         if self._model is not None:
             return
-        from byaldi import RAGMultiModalModel
+        try:
+            from byaldi import RAGMultiModalModel
+        except ImportError as e:
+            raise ImportError(
+                "ByaldiRetriever requires the optional 'byaldi' package. "
+                "Install with: pip install byaldi"
+            ) from e
 
         log.info("Loading Byaldi RAGMultiModalModel %s", self.checkpoint)
         self._model = RAGMultiModalModel.from_pretrained(self.checkpoint)
@@ -179,7 +190,12 @@ class ByaldiRetriever:
         save_json([dict(it) for it in items], out / "metadata.json")
 
     def load(self, index_dir: str | Path) -> None:
-        from byaldi import RAGMultiModalModel
+        try:
+            from byaldi import RAGMultiModalModel
+        except ImportError as e:
+            raise ImportError(
+                "ByaldiRetriever requires the optional 'byaldi' package."
+            ) from e
 
         self._model = RAGMultiModalModel.from_index(self.index_name)
         self.metadata = load_json(Path(index_dir) / "metadata.json")

@@ -17,6 +17,7 @@ from cxr_intel.data.chexpert_labels import (
     rule_based_label_vector,
 )
 from cxr_intel.data.kaggle_loader import (
+    build_basename_index,
     discover_csv,
     download_kaggle_dataset,
     find_image_for_row,
@@ -90,7 +91,10 @@ def main() -> None:
         log.info("Stratified subsample to %d rows", len(df))
 
     log.info("Resolving image paths…")
-    df["image_path"] = df.apply(lambda r: find_image_for_row(r, raw_dir), axis=1)
+    basename_index = build_basename_index(raw_dir)
+    df["image_path"] = df.apply(
+        lambda r: find_image_for_row(r, raw_dir, basename_index=basename_index), axis=1
+    )
     n_with_image = int(df["image_path"].notna().sum())
     log.info("Images located: %d / %d", n_with_image, len(df))
     df = df[df["image_path"].notna()].copy()
