@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from textwrap import dedent
@@ -68,6 +69,7 @@ class SynthGenerator:
     llm: LLMRouter = field(default_factory=LLMRouter)
     cache_dir: Path | None = None
     questions_per_report: int = 4
+    parallel_per_report: int = 4    # how many qtype calls to run concurrently per report
 
     def _cache_key(self, report: str, qtype: str, anchor: str) -> str:
         h = hashlib.sha256(f"{report}::{qtype}::{anchor}::{self.llm.model}".encode()).hexdigest()
@@ -104,6 +106,48 @@ class SynthGenerator:
         rng.shuffle(plan)
         return plan[: self.questions_per_report]
 
+    def _gen_one_question(
+        self, study_id: str, image_path: str, report_text: str, chex: dict,
+        qtype: str, alabel: str, aval: float, q_idx: int,
+    ) -> QAPair | None:
+        """Generate a single QA pair. Thread-safe (no shared mutable state)."""
+        suggestions = templates_for(qtype, alabel)
+        user = USER_TEMPLATE.format(
+            report=report_text,
+            chexpert=json.dumps(chex, indent=0),
+            qtype=qtype,
+            anchor_label=alabel,
+            anchor_value=aval,
+            suggestions="\n".join(f"- {s}" for s in suggestions),
+        )
+        key = self._cache_key(report_text, qtype, alabel)
+        cached = self._read_cache(key)
+        try:
+            obj = cached or self.llm.chat_json(SYSTEM_PROMPT, user)
+        except Exception as e:
+            log.warning("LLM error on study=%s qtype=%s: %s", study_id, qtype, e)
+            return None
+        if not cached:
+            self._write_cache(key, obj)
+        if obj.get("skip"):
+            return None
+        try:
+            return QAPair(
+                qa_id=f"{study_id}_{qtype}_{q_idx}",
+                study_id=str(study_id),
+                image_path=str(image_path),
+                question=obj["question"].strip(),
+                answer=obj["answer"].strip(),
+                question_type=qtype,
+                anchor_label=alabel,
+                anchor_value=float(aval),
+                source_sentence=obj.get("source_sentence", "").strip(),
+                quality_scores=QualityScores(),
+            )
+        except (KeyError, ValueError, AttributeError) as e:
+            log.warning("Bad LLM JSON for study=%s qtype=%s: %s", study_id, qtype, e)
+            return None
+
     def generate_for_report(
         self,
         study_id: str,
@@ -115,48 +159,26 @@ class SynthGenerator:
         chex = rule_based_label_vector(report_text)
         anchor = primary_label(chex)
         anchor_val = chex.get(anchor, 0.0)
-
         plan = self._pick_question_plan(anchor, anchor_val, rng)
-        out: list[QAPair] = []
-        for q_idx, (qtype, alabel, aval) in enumerate(plan):
-            suggestions = templates_for(qtype, alabel)
-            user = USER_TEMPLATE.format(
-                report=report_text,
-                chexpert=json.dumps(chex, indent=0),
-                qtype=qtype,
-                anchor_label=alabel,
-                anchor_value=aval,
-                suggestions="\n".join(f"- {s}" for s in suggestions),
-            )
-            key = self._cache_key(report_text, qtype, alabel)
-            cached = self._read_cache(key)
-            try:
-                obj = cached or self.llm.chat_json(SYSTEM_PROMPT, user)
-            except Exception as e:
-                log.warning("LLM error on study=%s qtype=%s: %s", study_id, qtype, e)
-                continue
-            if not cached:
-                self._write_cache(key, obj)
 
-            if obj.get("skip"):
-                continue
-            try:
-                qa = QAPair(
-                    qa_id=f"{study_id}_{qtype}_{q_idx}",
-                    study_id=str(study_id),
-                    image_path=str(image_path),
-                    question=obj["question"].strip(),
-                    answer=obj["answer"].strip(),
-                    question_type=qtype,
-                    anchor_label=alabel,
-                    anchor_value=float(aval),
-                    source_sentence=obj.get("source_sentence", "").strip(),
-                    quality_scores=QualityScores(),
-                )
-                out.append(qa)
-            except (KeyError, ValueError) as e:
-                log.warning("Bad LLM JSON for study=%s: %s", study_id, e)
-        return out
+        if self.parallel_per_report <= 1:
+            results = [
+                self._gen_one_question(study_id, image_path, report_text, chex, qt, al, av, i)
+                for i, (qt, al, av) in enumerate(plan)
+            ]
+        else:
+            results: list[QAPair | None] = [None] * len(plan)
+            with ThreadPoolExecutor(max_workers=min(self.parallel_per_report, len(plan))) as ex:
+                fut_to_idx = {
+                    ex.submit(
+                        self._gen_one_question, study_id, image_path, report_text, chex,
+                        qt, al, av, i,
+                    ): i
+                    for i, (qt, al, av) in enumerate(plan)
+                }
+                for fut in as_completed(fut_to_idx):
+                    results[fut_to_idx[fut]] = fut.result()
+        return [r for r in results if r is not None]
 
     def generate_many(self, rows: Iterable[dict], seed: int = 42) -> Iterable[QAPair]:
         for row in rows:
