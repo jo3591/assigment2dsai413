@@ -49,16 +49,28 @@ def download_kaggle_dataset(slug: str, dest_dir: str | Path) -> Path:
 
 
 def discover_csv(root: str | Path) -> Path:
-    """Find the report CSV file in the downloaded archive."""
+    """Find the report CSV file in the downloaded archive.
+
+    Avoid rglob on the top-level directory — it can recurse into image
+    subdirectories with hundreds of thousands of files. Try top-level first,
+    then immediate subdirs only.
+    """
     root = Path(root)
-    candidates = [
-        *root.glob("*.csv"),
-        *root.rglob("mimic*.csv"),
-        *root.rglob("*reports*.csv"),
-    ]
+    # 1. Top-level CSVs (fast)
+    candidates = list(root.glob("*.csv"))
     if not candidates:
-        raise FileNotFoundError(f"No CSV found under {root}")
-    # Pick the largest CSV — that's almost always the reports file.
+        # 2. One-level deep (immediate subdirs only, not recursive)
+        for sub in root.iterdir():
+            if sub.is_dir():
+                candidates.extend(sub.glob("*.csv"))
+                if candidates:
+                    break
+    if not candidates:
+        raise FileNotFoundError(f"No CSV found under {root} (top-level or 1 deep)")
+    # Prefer "train" file, then largest
+    train_hits = [c for c in candidates if "train" in c.name.lower()]
+    if train_hits:
+        return max(train_hits, key=lambda p: p.stat().st_size)
     return max(candidates, key=lambda p: p.stat().st_size)
 
 
