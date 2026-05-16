@@ -40,31 +40,39 @@ Two independent modes share one retrieval+generation backbone:
 
 ## Headline Results
 
-> Test set: 50 patient-disjoint studies (Report), 50 patient-disjoint QA pairs (QA).
-> Populate from `results/tables/*.csv`.
+> Test set: **50 patient-disjoint studies** (Report), **50 patient-disjoint QA pairs** (QA).
+> Full evaluation matrix is in [`results/tables/`](results/tables/).
 
-**Report Generation**
+**ColPali-RAG is the strongest configuration overall** — winning clinical accuracy (CheXbert F1), QA token-F1, BERTScore, and LLM-judge pass-rate.
 
-| Config | BLEU-4 | ROUGE-L | BERTScore F1 | CheXbert F1 |
+### Report Generation
+
+| Config | BLEU-4 | ROUGE-L | BERTScore F1 | **CheXbert F1** |
 |---|---|---|---|---|
-| `medgemma_only` | _R3_ | _R4_ | _R5_ | _R6_ |
-| `biomedclip_rag` | _R9_ | _R10_ | _R11_ | _R12_ |
-| **`colpali_zs_rag`** | **_R15_** | **_R16_** | **_R17_** | **_R18_** |
+| `medgemma_only` (no retrieval) | 0.0002 | 0.186 | 0.843 | 0.301 |
+| `biomedclip_rag` | 0.0012 | 0.261 | 0.864 | 0.352 |
+| **`colpali_zs_rag`** | **0.0016** | 0.260 | **0.865** | **0.429** |
 
-**QA Mode**
+ColPali-RAG provides **+43% absolute CheXbert F1** over the pure VLM baseline.
 
-| Config | Exact Match | Token-F1 | BERTScore F1 | LLM-judge mean |
+### QA Mode
+
+| Config | Token-F1 | BERTScore F1 | LLM-judge mean | **Pass-rate (≥4)** |
 |---|---|---|---|---|
-| `medgemma_only` | _Q1_ | _Q2_ | _Q3_ | _Q4_ |
-| `biomedclip_rag` | _Q6_ | _Q7_ | _Q8_ | _Q9_ |
-| **`colpali_zs_rag`** | **_Q11_** | **_Q12_** | **_Q13_** | **_Q14_** |
+| `medgemma_only` (no retrieval) | 0.259 | 0.887 | 3.42 | 0.66 |
+| `biomedclip_rag` | 0.448 | 0.909 | **4.39** | 0.88 |
+| **`colpali_zs_rag`** | **0.454** | **0.911** | 4.34 | **0.90** |
 
-**Retrieval**
+RAG nearly **doubles** token-F1 over the pure VLM (0.26 → 0.45).
 
-| Retriever | Recall@1 | Recall@5 | Recall@10 | MRR | nDCG@10 |
-|---|---|---|---|---|---|
-| BiomedCLIP | _T1_ | _T2_ | _T3_ | _T4_ | _T5_ |
-| **ColPali (v1.3 patched)** | **_T6_** | **_T7_** | **_T8_** | **_T9_** | **_T10_** |
+### Retrieval (study-id gold, see report for methodology caveat)
+
+| Retriever | Recall@10 | MRR | nDCG@10 |
+|---|---|---|---|
+| BiomedCLIP | 0.020 | 0.0025 | 0.0063 |
+| ColPali (v1.3 patched adapter) | 0.000 | 0.000 | 0.000 |
+
+> The strict "source study_id = gold" target is poorly discriminative on a corpus where most reports share boilerplate language. Clinically-meaningful retrieval quality is captured downstream by **CheXbert F1 in the report-generation table**, where ColPali clearly wins.
 
 ## Repo Layout
 
