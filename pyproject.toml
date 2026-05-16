@@ -14,11 +14,11 @@ keywords = ["medical-ai", "chest-xray", "rag", "colpali", "medgemma", "multimoda
 
 dependencies = [
     "torch>=2.4.0",
-    "transformers>=4.50.0",
-    "accelerate>=1.1.0",
-    "peft>=0.15.0",
-    "bitsandbytes>=0.44.0",
-    "colpali-engine>=0.3.10",
+    "transformers==4.47.1",
+    "accelerate==1.1.1",
+    "peft==0.13.2",
+    "bitsandbytes==0.44.1",
+    "colpali-engine==0.3.7",
     "open_clip_torch>=2.29.0",
     "faiss-cpu>=1.8.0",
     "pillow>=10.4.0",
