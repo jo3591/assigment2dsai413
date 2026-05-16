@@ -80,6 +80,7 @@ lightning_logs/
 # OS
 Thumbs.db
 
-# Claude Code local settings
+# Local-only files (anything matching *.local.* stays out of the repo)
 .claude/
-
+*.local.md
+*.local.txt

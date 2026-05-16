@@ -2,6 +2,8 @@
 
 > DSAI 413 Assignment 2 — dual-mode medical AI: **Report Generation** + **RAG-based QA** for chest X-rays. Compares **ColPali** (patched v1.3 adapter), **BiomedCLIP**, and pure **MedGemma-4B-IT** across both modes.
 
+**Author:** Yousef Ahmed (ID: 202202018)
+
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
