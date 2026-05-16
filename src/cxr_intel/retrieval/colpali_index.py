@@ -66,10 +66,13 @@ class ColPaliRetriever:
 
     def _encode_images(self, images: Sequence[Image.Image]):
         import torch
+        from tqdm.auto import tqdm
 
         self._ensure_model()
         out = []
-        for i in range(0, len(images), self.batch_size):
+        n_batches = (len(images) + self.batch_size - 1) // self.batch_size
+        for i in tqdm(range(0, len(images), self.batch_size),
+                      total=n_batches, desc="ColPali encode"):
             batch = images[i : i + self.batch_size]
             inputs = self._processor.process_images(batch).to(self._model.device)
             with torch.no_grad():
