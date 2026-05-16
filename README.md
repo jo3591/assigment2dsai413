@@ -134,6 +134,9 @@ Three configurations are evaluated head-to-head:
 
 ## Demo
 
+**🎬 Video walkthrough:**
+**https://drive.google.com/drive/folders/15oXdKpTgSnK0ps9406sp5TSrJCjQqee5**
+
 **🌐 Live Gradio demo (Kaggle T4×2 session exposed via ngrok):**
 **https://escargot-murkiness-scorecard.ngrok-free.dev/**
 
