@@ -29,13 +29,12 @@ The full pipeline lives in `src/cxr_intel/`. A high-level diagram:
           ▼                             ▼
    ┌──────────────────────────────────────────────────┐
    │  Retriever (one of):                             │
-   │    BiomedCLIP · ColPali (zs) · ColPali (LoRA)    │
-   │    or none (pure VLM)                            │
+   │    BiomedCLIP · ColPali (v1.3 patched) · none    │
    └──────────────────────────────────────────────────┘
                          │
                          ▼
    ┌──────────────────────────────────────────────────┐
-   │  Generator: MedGemma-4B-IT  (or text-only LLM)   │
+   │  Generator: MedGemma-4B-IT (INT4 quantized)      │
    └──────────────────────────────────────────────────┘
                          │
                          ▼
@@ -45,13 +44,15 @@ The full pipeline lives in `src/cxr_intel/`. A high-level diagram:
 - **ColPali** ([Faysse et al. 2024](https://arxiv.org/abs/2407.01449)) is a multi-vector
   PaliGemma-based retriever using ColBERT-style late interaction (MaxSim). It treats
   page-as-image: the CXR is encoded into a grid of patch embeddings and queries are
-  scored against all patches.
+  scored against all patches. We use the official `vidore/colpali-v1.3` adapter with a
+  manual key-remap patch (the published adapter is keyed against transformers ≤4.50's
+  PaliGemma module paths; transformers ≥4.51 renamed them).
 - **MedGemma-4B-IT** ([Google DeepMind](https://deepmind.google/models/gemma/medgemma/))
-  is the multimodal generator. We chose 4B over 27B for Colab feasibility.
-- **BiomedCLIP** is the lightweight CLIP baseline for retrieval, providing a single
-  vector per image — useful for highlighting where multi-vector ColPali wins.
-- **Text-only LLM ablation** (Llama-3.3-70B via OpenRouter) tests whether the VLM
-  contributes more than the retrieved evidence.
+  is the multimodal generator, loaded in INT4 via `bitsandbytes` to fit alongside
+  ColPali on a T4 (16 GB VRAM).
+- **BiomedCLIP** ([Zhang et al. 2023](https://arxiv.org/abs/2303.00915)) is the
+  domain-pretrained CLIP baseline — a single global embedding per image vs ColPali's
+  multi-vector patch-level approach.
 
 ## 3. Dataset
 
@@ -88,32 +89,27 @@ MIMIC-CXR-VQA paper:
 - **Output**: ~1 200 validated pairs across train/val, ~200 held-out test pairs.
   Distribution: 35% existence, 25% location, 20% severity, 10% attribute, 10% open.
 
-## 5. ColPali LoRA Fine-tune
-
-Even strong zero-shot ColPali is trained on academic-document corpora; the radiology
-domain has different visual patterns (low-contrast lung markings, ribs, devices). We
-fine-tune a rank-32 LoRA adapter on (CXR image, FINDINGS+IMPRESSION) pairs:
-
-- **Pairs**: 2 400 train / 300 val. Hard negatives = 3 reports sharing the same
-  primary CheXpert label but a different `study_id`.
-- **Loss**: late-interaction InfoNCE (ColbertLoss).
-- **Training**: 3 epochs, AdamW lr=5e-5, cosine schedule, bf16, gradient checkpointing,
-  effective batch 16. ≈ 3 hours on Colab A100.
-
-## 6. Evaluation
+## 5. Evaluation
 
 | Mode | Metrics |
 |---|---|
-| Report | BLEU-1/2/4, ROUGE-L, BERTScore-F1, CheXbert-F1 (rule-based), RadGraph-F1 (opt-in) |
+| Report Generation | BLEU-1/2/4, ROUGE-L, BERTScore-F1, CheXbert-F1 (rule-based) |
 | QA | Exact Match, token-F1, BERTScore-F1, LLM-judge mean + pass-rate (≥ 4) |
 | Retrieval | Recall@1/5/10, MRR, nDCG@10 |
 
-## 7. Results
+We evaluated three configurations on 50 patient-disjoint test cases each:
+1. `medgemma_only` — pure VLM, no retrieval (baseline)
+2. `biomedclip_rag` — BiomedCLIP retrieves → MedGemma generates
+3. `colpali_zs_rag` — ColPali (v1.3 patched) retrieves → MedGemma generates
 
-> Numbers populated after running notebooks 04 and 05. See `results/tables/*.csv` and
-> figures in `results/figures/`.
+The text-only LLM ablation and the ColPali-LoRA fine-tune from our original plan
+were dropped under deadline pressure — see §9 Future Work.
 
-### 7.1 Report Generation (50 held-out test studies)
+## 6. Results
+
+> Numbers from `results/tables/*.csv` (eval run on Kaggle T4×2, May 16 2026).
+
+### 6.1 Report Generation (50 held-out test studies)
 
 | Config | BLEU-1 | BLEU-2 | BLEU-4 | ROUGE-L | BERTScore F1 | CheXbert F1 |
 |---|---|---|---|---|---|---|
@@ -123,7 +119,7 @@ fine-tune a rank-32 LoRA adapter on (CXR image, FINDINGS+IMPRESSION) pairs:
 
 **ColPali-RAG wins on the clinical metric (CheXbert F1 = 0.429, +43% over no-RAG).** Surface-form metrics (BLEU) are uniformly low — MIMIC report wording varies widely — but BERTScore and CheXbert F1 (both contextual / clinical) show clean ordering: `colpali_zs_rag > biomedclip_rag > medgemma_only`.
 
-### 7.2 QA (50 held-out test QA pairs)
+### 6.2 QA (50 held-out test QA pairs)
 
 | Config | Exact Match | Token-F1 | BERTScore F1 | LLM-judge mean | Pass-rate (≥4) |
 |---|---|---|---|---|---|
@@ -133,16 +129,16 @@ fine-tune a rank-32 LoRA adapter on (CXR image, FINDINGS+IMPRESSION) pairs:
 
 **ColPali-RAG also wins QA on token-F1, BERTScore, and the LLM-judge pass rate.** RAG (either retriever) nearly **doubles token-F1** vs the pure VLM (0.26 → 0.45). Exact-Match is 0 across the board because answers vary in surface form (e.g., "Yes" vs "Yes, present" both correct).
 
-### 7.3 Retrieval (50 sentence-queries; gold = source study_id)
+### 6.3 Retrieval (50 sentence-queries; gold = source study_id)
 
 | Backend | Recall@1 | Recall@5 | Recall@10 | MRR | nDCG@10 |
 |---|---|---|---|---|---|
 | BiomedCLIP | 0.000 | 0.000 | 0.020 | 0.0025 | 0.0063 |
 | ColPali (v1.3 patched adapter) | 0.000 | 0.000 | 0.000 | 0.0000 | 0.0000 |
 
-**Caveat — methodology rather than performance.** These low numbers reflect a hard-set gold ("the test sentence's source study, exactly") that is *not* discriminative on this corpus. CXR reports share enormous boilerplate ("Lungs are clear", "No acute findings"), so many studies are equally-valid matches for a given query sentence. A non-trivial fraction of randomly-picked train studies satisfy the query as well as the gold does. Better evaluation: use **clinically-annotated relevance** (CheXpert label match instead of study-id match), which is exactly what CheXbert-F1 in §7.1 effectively measures downstream — and where **ColPali clearly wins**.
+**Caveat — methodology rather than performance.** These low numbers reflect a hard-set gold ("the test sentence's source study, exactly") that is *not* discriminative on this corpus. CXR reports share enormous boilerplate ("Lungs are clear", "No acute findings"), so many studies are equally-valid matches for a given query sentence. A non-trivial fraction of randomly-picked train studies satisfy the query as well as the gold does. Better evaluation: use **clinically-annotated relevance** (CheXpert label match instead of study-id match), which is exactly what CheXbert-F1 in §6.1 effectively measures downstream — and where **ColPali clearly wins**.
 
-## 8. Discussion
+## 7. Discussion
 
 **Four findings from the eval matrix:**
 
@@ -170,7 +166,7 @@ fine-tune a rank-32 LoRA adapter on (CXR image, FINDINGS+IMPRESSION) pairs:
    zero for both retrievers because the gold = "source study_id" target is poorly
    discriminative — CXR reports share boilerplate ("Lungs are clear", "No acute
    findings"), so many studies are equally valid matches. A better evaluation would
-   use CheXpert-label-match as gold; this is exactly what CheXbert F1 in §7.1
+   use CheXpert-label-match as gold; this is exactly what CheXbert F1 in §6.1
    captures downstream — and there ColPali clearly leads.
 
 **Where the model failed.** Most failures fell into three buckets: (a) generated
@@ -185,10 +181,10 @@ long reports got truncated at the 512-token generation cap, sometimes mid-senten
   is present (all 3 configs face this equally, so the *ranking* remains valid).
   A clean split (train-only index + test queries) is the recommended fix.
 - The ColPali v1.3 LoRA adapter required manual key-remapping to load with
-  transformers 5.x (see `00_kaggle_full_pipeline.ipynb` Stage 4b). Without the
+  transformers 5.x (see `notebooks/kaggle_main.ipynb` Stage 4b). Without the
   patch, the LoRA silently fails to merge and only base PaliGemma weights are used.
 
-## 9. Limitations
+## 8. Limitations
 
 - **Not clinical-grade.** All output is for research only; MedGemma's TOS forbids
   clinical decision-making and the training data has known biases.
@@ -198,7 +194,7 @@ long reports got truncated at the 512-token generation cap, sometimes mid-senten
 - **Patient-level split** prevents trivial leakage but doesn't simulate distribution
   shift — performance on truly unseen institutions is likely lower.
 
-## 10. Future Work
+## 9. Future Work
 
 - Replace the rule-based labeler with the official CheXbert if license permits.
 - Add a second VLM (e.g., LLaVA-Med, Qwen2.5-VL) for direct comparison with MedGemma.
