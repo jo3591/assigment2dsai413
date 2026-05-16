@@ -47,8 +47,13 @@ class ColPaliRetriever:
 
         dtype = getattr(torch, self.torch_dtype)
         log.info("Loading ColPali %s (dtype=%s)", self.checkpoint, self.torch_dtype)
+        # device_map="auto" can hit a "meta device" bug with multi-GPU + accelerate
+        # when the model fits on one card. Force single GPU when CUDA is available.
+        effective_device_map = self.device_map
+        if effective_device_map == "auto" and torch.cuda.is_available():
+            effective_device_map = {"": "cuda:0"}
         self._model = ColPali.from_pretrained(
-            self.checkpoint, torch_dtype=dtype, device_map=self.device_map
+            self.checkpoint, torch_dtype=dtype, device_map=effective_device_map
         ).eval()
         self._processor = ColPaliProcessor.from_pretrained(self.checkpoint)
 
