@@ -9,7 +9,7 @@
 
 ## Overview
 
-Two independent modes share one retrieval + generation backbone:
+Two independent modes share one retrieval + generation backbone. "Retriever = none" means we skip retrieval and feed the image straight to MedGemma (the pure-VLM baseline).
 
 ```
                 CXR Image (+ optional Question)
@@ -17,16 +17,28 @@ Two independent modes share one retrieval + generation backbone:
           ┌──────────────┴──────────────┐
           │                             │
      Mode A: Report                Mode B: QA
+     (image only)                  (image + question)
           │                             │
-   [Retriever]                    [Retriever]
-   ColPali  /  BiomedCLIP  /  none
-          │                             │
-   Top-K reports                  Top-K reports
-          │                             │
-   [Generator]                    [Generator]
-   MedGemma-4B-IT (INT4)          MedGemma-4B-IT (INT4)
-          │                             │
-   FINDINGS + IMPRESSION           Grounded Answer
+          ▼                             ▼
+   ┌────────────────────────────────────────────┐
+   │  Retriever (one of three):                 │
+   │    1. ColPali v1.3 (patched LoRA adapter)  │
+   │    2. BiomedCLIP (medical CLIP baseline)   │
+   │    3. none  →  skip retrieval, pure VLM    │
+   │                                            │
+   │  → top-K similar reports (text snippets)   │
+   └────────────────────────────────────────────┘
+                         │
+                         ▼
+   ┌────────────────────────────────────────────┐
+   │  Generator: MedGemma-4B-IT (INT4)          │
+   │  Input: image + (optional) retrieved text  │
+   │         + (QA mode) the question           │
+   └────────────────────────────────────────────┘
+                         │
+          ┌──────────────┴──────────────┐
+          ▼                             ▼
+   FINDINGS + IMPRESSION            Grounded Answer
                                     + retrieved evidence
 ```
 
@@ -63,11 +75,10 @@ Three configurations are evaluated head-to-head:
 413assigment2/
 ├── README.md                         # this file
 ├── report/report.md                  # short written report (architecture, results, discussion)
-├── report/demo_video_link.md         # YouTube link
 ├── configs/                          # 5 YAML configs (data, colpali, medgemma, biomedclip, eval)
 ├── notebooks/
 │   ├── kaggle_main.ipynb             # ★ THE notebook — full pipeline executed on Kaggle T4×2
-│   └── colabpart1.ipynb              # early Colab session (data download exploration)
+│   └── kaggle_gradio_demo.ipynb      # launches the live Gradio app + ngrok public URL
 ├── scripts/                          # CLI entry points called by the notebook
 │   ├── download_data.py
 │   ├── build_qa_dataset.py
@@ -121,7 +132,12 @@ Three configurations are evaluated head-to-head:
 
 ## Demo
 
-See [`report/demo_video_link.md`](report/demo_video_link.md) for the unlisted YouTube walkthrough and the live Gradio public URL (Kaggle + ngrok). Screenshots are in [`results/`](results/).
+**🌐 Live Gradio demo (Kaggle T4×2 session exposed via ngrok):**
+**https://escargot-murkiness-scorecard.ngrok-free.dev/**
+
+Two tabs — `Report` (upload CXR → FINDINGS + IMPRESSION) and `QA` (upload CXR + clinical question → grounded answer). The notebook that launches the demo is [`notebooks/kaggle_gradio_demo.ipynb`](notebooks/kaggle_gradio_demo.ipynb). Demo screenshots are in [`results/`](results/).
+
+> The ngrok URL stays live while the Kaggle session is alive. If it returns 404, the session timed out — re-run the gradio notebook on Kaggle to get a fresh URL.
 
 ## Limitations & Ethics
 
