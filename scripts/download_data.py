@@ -47,6 +47,8 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=None,
                         help="Cap rows after preprocessing (smoke test)")
     parser.add_argument("--skip-download", action="store_true")
+    parser.add_argument("--no-basename-index", action="store_true",
+                        help="Skip slow basename-index fallback (recommended on Kaggle's network mount)")
     args = parser.parse_args()
 
     load_dotenv()
@@ -91,12 +93,22 @@ def main() -> None:
         log.info("Stratified subsample to %d rows", len(df))
 
     log.info("Resolving image paths…")
-    basename_index = build_basename_index(raw_dir)
+    # First pass: direct path-join only (fast, no scan). If hit-rate is too low,
+    # we fall back to building a basename index. Skip via --no-basename-index.
     df["image_path"] = df.apply(
-        lambda r: find_image_for_row(r, raw_dir, basename_index=basename_index), axis=1
+        lambda r: find_image_for_row(r, raw_dir, basename_index=None), axis=1
     )
     n_with_image = int(df["image_path"].notna().sum())
-    log.info("Images located: %d / %d", n_with_image, len(df))
+    log.info("Images located (direct path): %d / %d", n_with_image, len(df))
+    if not args.no_basename_index and n_with_image / max(1, len(df)) < 0.5:
+        log.info("Hit rate < 50%% — building basename index as fallback (slow on network mounts)")
+        basename_index = build_basename_index(raw_dir)
+        missing_mask = df["image_path"].isna()
+        df.loc[missing_mask, "image_path"] = df[missing_mask].apply(
+            lambda r: find_image_for_row(r, raw_dir, basename_index=basename_index), axis=1
+        )
+        n_with_image = int(df["image_path"].notna().sum())
+        log.info("Images located (after basename index): %d / %d", n_with_image, len(df))
     df = df[df["image_path"].notna()].copy()
     df["image_path"] = df["image_path"].astype(str)
 
