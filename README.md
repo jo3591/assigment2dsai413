@@ -40,21 +40,31 @@ Two independent modes share one retrieval+generation backbone:
 
 ## Headline Results
 
-> Filled in after you run `notebooks/04` and `notebooks/05`. See `results/tables/*.csv`.
+> Test set: 50 patient-disjoint studies (Report), 50 patient-disjoint QA pairs (QA).
+> Populate from `results/tables/*.csv`.
 
-| Config | Mode A — BERTScore | Mode A — CheXbert F1 | Mode B — Token-F1 | Mode B — LLM-judge |
+**Report Generation**
+
+| Config | BLEU-4 | ROUGE-L | BERTScore F1 | CheXbert F1 |
 |---|---|---|---|---|
-| `medgemma_only` | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
-| `biomedclip_rag` | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
-| `colpali_zs_rag` | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
-| `colpali_lora_rag` | **_tbd_** | **_tbd_** | **_tbd_** | **_tbd_** |
-| `colpali_lora_text_llm` | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
+| `medgemma_only` | _R3_ | _R4_ | _R5_ | _R6_ |
+| `biomedclip_rag` | _R9_ | _R10_ | _R11_ | _R12_ |
+| **`colpali_zs_rag`** | **_R15_** | **_R16_** | **_R17_** | **_R18_** |
+
+**QA Mode**
+
+| Config | Exact Match | Token-F1 | BERTScore F1 | LLM-judge mean |
+|---|---|---|---|---|
+| `medgemma_only` | _Q1_ | _Q2_ | _Q3_ | _Q4_ |
+| `biomedclip_rag` | _Q6_ | _Q7_ | _Q8_ | _Q9_ |
+| **`colpali_zs_rag`** | **_Q11_** | **_Q12_** | **_Q13_** | **_Q14_** |
+
+**Retrieval**
 
 | Retriever | Recall@1 | Recall@5 | Recall@10 | MRR | nDCG@10 |
 |---|---|---|---|---|---|
-| BiomedCLIP | _tbd_ | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
-| ColPali (zero-shot) | _tbd_ | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
-| ColPali (LoRA) | _tbd_ | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
+| BiomedCLIP | _T1_ | _T2_ | _T3_ | _T4_ | _T5_ |
+| **ColPali (v1.3 patched)** | **_T6_** | **_T7_** | **_T8_** | **_T9_** | **_T10_** |
 
 ## Repo Layout
 

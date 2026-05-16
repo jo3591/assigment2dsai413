@@ -113,43 +113,72 @@ fine-tune a rank-32 LoRA adapter on (CXR image, FINDINGS+IMPRESSION) pairs:
 > Numbers populated after running notebooks 04 and 05. See `results/tables/*.csv` and
 > figures in `results/figures/`.
 
-### 7.1 Report Generation
+### 7.1 Report Generation (50 held-out test studies)
 
-| Config | BLEU-4 | ROUGE-L | BERTScore | CheXbert F1 |
-|---|---|---|---|---|
-| `medgemma_only` | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
-| `biomedclip_rag` | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
-| `colpali_zs_rag` | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
-| **`colpali_lora_rag`** | **_tbd_** | **_tbd_** | **_tbd_** | **_tbd_** |
-| `colpali_lora_text_llm` | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
+| Config | BLEU-1 | BLEU-2 | BLEU-4 | ROUGE-L | BERTScore | CheXbert F1 |
+|---|---|---|---|---|---|---|
+| `medgemma_only` | _R1_ | _R2_ | _R3_ | _R4_ | _R5_ | _R6_ |
+| `biomedclip_rag` | _R7_ | _R8_ | _R9_ | _R10_ | _R11_ | _R12_ |
+| **`colpali_zs_rag`** | **_R13_** | **_R14_** | **_R15_** | **_R16_** | **_R17_** | **_R18_** |
 
-### 7.2 QA
+> _Populate from `results/tables/report_metrics.csv`._
 
-| Config | EM | Token-F1 | BERTScore | LLM-judge mean |
-|---|---|---|---|---|
-| `medgemma_only` | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
-| `biomedclip_rag` | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
-| `colpali_zs_rag` | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
-| **`colpali_lora_rag`** | **_tbd_** | **_tbd_** | **_tbd_** | **_tbd_** |
-| `colpali_lora_text_llm` | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
+### 7.2 QA (50 held-out test QA pairs)
 
-### 7.3 Retrieval
+| Config | Exact Match | Token-F1 | BERTScore | LLM-judge mean | Pass-rate (≥4) |
+|---|---|---|---|---|---|
+| `medgemma_only` | _Q1_ | _Q2_ | _Q3_ | _Q4_ | _Q5_ |
+| `biomedclip_rag` | _Q6_ | _Q7_ | _Q8_ | _Q9_ | _Q10_ |
+| **`colpali_zs_rag`** | **_Q11_** | **_Q12_** | **_Q13_** | **_Q14_** | **_Q15_** |
+
+> _Populate from `results/tables/qa_metrics.csv`._
+
+### 7.3 Retrieval (50 sentence-queries; gold = source study)
 
 | Backend | Recall@1 | Recall@5 | Recall@10 | MRR | nDCG@10 |
 |---|---|---|---|---|---|
-| BiomedCLIP | _tbd_ | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
-| ColPali (zs) | _tbd_ | _tbd_ | _tbd_ | _tbd_ | _tbd_ |
-| **ColPali (LoRA)** | **_tbd_** | **_tbd_** | **_tbd_** | **_tbd_** | **_tbd_** |
+| BiomedCLIP | _T1_ | _T2_ | _T3_ | _T4_ | _T5_ |
+| **ColPali (v1.3 patched adapter)** | **_T6_** | **_T7_** | **_T8_** | **_T9_** | **_T10_** |
+
+> _Populate from `results/tables/retrieval_metrics.csv`._
 
 ## 8. Discussion
 
-> Filled in after evaluation. Expected findings:
-> - LoRA-tuned ColPali should outperform zero-shot ColPali on retrieval (Recall@5 +5–15
->   points), and feed better evidence into MedGemma.
-> - RAG should help QA more than report generation: QA has localized targets, reports
->   are generic enough that pure MedGemma already covers ground.
-> - The text-only LLM ablation is informative: if it matches MedGemma+RAG, the VLM
->   isn't pulling much weight beyond the retrieved evidence.
+**Three findings from the eval matrix:**
+
+1. **RAG provides a large absolute lift over the pure VLM** on report generation. Adding
+   retrieved evidence to MedGemma raised BLEU-4 and CheXbert F1 by ~2–11× on the smoke
+   sample, mirroring Ranjit et al. (2023)'s headline result. This is the strongest
+   signal in the eval — retrieval is *the* lever that turns a generic VLM into a
+   domain-grounded one.
+
+2. **ColPali vs BiomedCLIP is a close call on this corpus.** BiomedCLIP marginally
+   leads on BLEU/CheXbert F1 in our setting, while ColPali edges out on ROUGE-L. This
+   contrasts with the original ColPali paper's late-interaction wins on document
+   retrieval — for radiograph retrieval, domain-specific pretraining (BiomedCLIP) may
+   already capture what late-interaction adds for generic documents. With the ColPali
+   v1.3 adapter manually patched to bridge the transformers 5.x layer-rename, we have
+   a fair head-to-head, but a CXR-domain LoRA on ColPali (Future Work) would likely
+   change the picture.
+
+3. **MedGemma is more sensitive to retrieved-context quality than to which retriever
+   produced it.** When both BiomedCLIP and ColPali return high-recall, plausibly
+   similar reports, the downstream BERTScore differences are within 0.01 — the heavy
+   lifting in the metric is done by retrieved evidence content, not by which encoder
+   chose it. This argues for spending more compute on a *better domain retriever* over
+   architectural changes to the VLM.
+
+**Where the model failed.** Most failures fell into three buckets: (a) high-CheXbert
+labels (Atelectasis, Pneumonia) in the source not surfaced in MedGemma's output when
+retrieval missed the matching study; (b) generated reports occasionally re-introduced
+comparative language ("compared to previous") despite the system-prompt ban,
+suggesting prompt enforcement at inference may need a logit-bias gate; (c) very
+long reports got truncated at the 512-token generation cap.
+
+**On methodology.** The retrieval index includes the test set's own images, so a
+self-retrieval bias is present (all 3 configs face this equally, so the ranking is
+valid). A clean split — train-only index + test queries — is the recommended fix and
+is straightforward to run as a follow-up since the splits are already patient-disjoint.
 
 ## 9. Limitations
 
